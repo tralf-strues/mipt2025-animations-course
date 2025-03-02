@@ -6,6 +6,7 @@
 #include <assimp/postprocess.h>
 #include "engine/api.h"
 #include "glad/glad.h"
+#include <glm/gtc/type_ptr.hpp>
 
 #include "import/model.h"
 
@@ -15,8 +16,8 @@ MeshPtr create_mesh(const aiMesh *mesh)
   std::vector<vec3> vertices;
   std::vector<vec3> normals;
   std::vector<vec2> uv;
-  std::vector<vec4> weights;
-  std::vector<uvec4> weightsIndex;
+  std::vector<uvec4> boneIndices;
+  std::vector<vec4> boneWeights;
 
   int numVert = mesh->mNumVertices;
   int numFaces = mesh->mNumFaces;
@@ -55,43 +56,63 @@ MeshPtr create_mesh(const aiMesh *mesh)
 
   if (mesh->HasBones())
   {
-    weights.resize(numVert, vec4(0.f));
-    weightsIndex.resize(numVert);
+    boneWeights.resize(numVert, vec4(0.f));
+    boneIndices.resize(numVert);
+
     int numBones = mesh->mNumBones;
     std::vector<int> weightsOffset(numVert, 0);
     for (int i = 0; i < numBones; i++)
     {
       const aiBone *bone = mesh->mBones[i];
-      // bonesMap[std::string(bone->mName.C_Str())] = i;
 
       for (unsigned j = 0; j < bone->mNumWeights; j++)
       {
         int vertex = bone->mWeights[j].mVertexId;
         int offset = weightsOffset[vertex]++;
-        weights[vertex][offset] = bone->mWeights[j].mWeight;
-        weightsIndex[vertex][offset] = i;
+        assert(offset < 4);
+        boneWeights[vertex][offset] = bone->mWeights[j].mWeight;
+        boneIndices[vertex][offset] = i;
       }
+
     }
     // the sum of weights not 1
     for (int i = 0; i < numVert; i++)
     {
-      vec4 w = weights[i];
+      vec4 w = boneWeights[i];
       float s = w.x + w.y + w.z + w.w;
-      weights[i] *= 1.f / s;
+      boneWeights[i] *= 1.f / s;
     }
   }
-  return create_mesh(mesh->mName.C_Str(), indices, vertices, normals, uv, weights, weightsIndex);
+  return create_mesh(mesh->mName.C_Str(), indices, vertices, normals, uv, boneWeights, boneIndices);
+}
+
+void load_skeleton_nodes(SkeletonAsset &skeleton, const aiNode &node, int32_t parentIndex, int32_t hierarchyDepth = 0)
+{
+  int32_t nodeIndex = skeleton.parentIndices.size();
+
+  skeleton.names.push_back(node.mName.C_Str());
+  skeleton.localTransforms.push_back(glm::transpose(glm::make_mat4(&node.mTransformation.a1)));
+  skeleton.parentIndices.push_back(parentIndex);
+  skeleton.hierarchyDepths.push_back(hierarchyDepth);
+
+  for (int32_t i = 0; i < node.mNumChildren; ++i)
+  {
+    load_skeleton_nodes(skeleton, *node.mChildren[i], nodeIndex, hierarchyDepth + 1);
+  }
 }
 
 ModelAsset load_model(const char *path)
 {
-
   Assimp::Importer importer;
   importer.SetPropertyBool(AI_CONFIG_IMPORT_FBX_PRESERVE_PIVOTS, false);
   importer.SetPropertyFloat(AI_CONFIG_GLOBAL_SCALE_FACTOR_KEY, 1.f);
 
-  importer.ReadFile(path, aiPostProcessSteps::aiProcess_Triangulate | aiPostProcessSteps::aiProcess_LimitBoneWeights |
-                              aiPostProcessSteps::aiProcess_GenNormals | aiProcess_GlobalScale | aiProcess_FlipWindingOrder);
+  importer.ReadFile(path,
+    aiPostProcessSteps::aiProcess_Triangulate |
+    aiPostProcessSteps::aiProcess_LimitBoneWeights |
+    aiPostProcessSteps::aiProcess_GenNormals |
+    aiPostProcessSteps::aiProcess_GlobalScale |
+    aiPostProcessSteps::aiProcess_FlipWindingOrder);
 
   const aiScene *scene = importer.GetScene();
   ModelAsset model;
@@ -101,6 +122,8 @@ ModelAsset load_model(const char *path)
     engine::error("Filed to read model file \"%s\"", path);
     return model;
   }
+
+  load_skeleton_nodes(model.skeletonAsset, *scene->mRootNode, SkeletonAsset::NULL_PARENT);
 
   model.meshes.resize(scene->mNumMeshes);
   for (uint32_t i = 0; i < scene->mNumMeshes; i++)

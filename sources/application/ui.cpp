@@ -2,6 +2,8 @@
 #include "imgui/imgui.h"
 #include "imgui/ImGuizmo.h"
 
+#include <ozz/animation/runtime/skeleton_utils.h>
+
 #include "scene.h"
 
 static ImGuizmo::OPERATION mCurrentGizmoOperation(ImGuizmo::TRANSLATE);
@@ -122,6 +124,7 @@ static void show_characters(Scene &scene)
   // implement showing characters when only one character can be selected
   static uint32_t selectedCharacter = -1u;
   static uint32_t selectedNode = -1u;
+  static std::vector<int> skeletonJointParentsStack;
 
   if (ImGui::Begin("Scene"))
   {
@@ -146,23 +149,27 @@ static void show_characters(Scene &scene)
         ImGui::Text("Meshes: %zu", character.meshes.size());
 
         // show skeleton
-        const SkeletonAsset &skeleton = scene.models[i].skeletonAsset;
+        const auto &skeleton = scene.models[i].skeleton;
 
-        ImGui::Text("Skeleton Nodes: %zu", skeleton.names.size());
+        ImGui::Text("Skeleton Nodes: %zu", skeleton->num_joints());
 
-        ImGui::Unindent(INDENT);
-
-        for (size_t j = 0; j < skeleton.names.size(); j++)
-        {
-          int32_t depth = skeleton.hierarchyDepths[j];
-
-          ImGui::Indent(INDENT * (depth + 1));
-          if (ImGui::Selectable(skeleton.names[j].c_str(), selectedNode == j))
+        // show  skeleton node hierarchy
+        skeletonJointParentsStack.clear();
+        ozz::animation::IterateJointsDF(*skeleton, [&](int jointIndex, int parentIndex) {
+          while (!skeletonJointParentsStack.empty() && skeletonJointParentsStack.back() != parentIndex)
           {
-            selectedNode = j;
+            skeletonJointParentsStack.pop_back();
           }
-          ImGui::Unindent(INDENT * (depth + 1));
-        }
+
+          ImGui::Indent(INDENT * skeletonJointParentsStack.size());
+          if (ImGui::Selectable(skeleton->joint_names()[jointIndex], selectedNode == jointIndex))
+          {
+            selectedNode = jointIndex;
+          }
+          ImGui::Unindent(INDENT * skeletonJointParentsStack.size());
+
+          skeletonJointParentsStack.push_back(jointIndex);
+        });
       }
 
       ImGui::PopID();
@@ -171,11 +178,12 @@ static void show_characters(Scene &scene)
     if (selectedCharacter < scene.characters.size())
     {
       Character &character = scene.characters[selectedCharacter];
-      if (selectedNode < character.skeleton.localTransforms.size())
+      if (selectedNode < character.skeleton->num_joints())
       {
-        glm::mat4 worldTransform = character.transform * character.skeleton.modelTransforms[selectedNode];
-        manipulate_transform(worldTransform, scene.userCamera);
-        character.skeleton.modelTransforms[selectedNode] = inverse(character.transform) * worldTransform;
+        glm::mat4 &worldTransform = character.animationContext.getWorldTransforms()[selectedNode];
+        glm::mat4 transform = character.transform * worldTransform;
+        manipulate_transform(transform, scene.userCamera);
+        worldTransform = inverse(character.transform) * transform;
       }
       else
       {
@@ -188,7 +196,6 @@ static void show_characters(Scene &scene)
   if (selectedCharacter < scene.characters.size())
   {
     const Character &character = scene.characters[selectedCharacter];
-    const SkeletonRuntime &skeleton = character.skeleton;
 
     const ImU32 flags = ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoScrollbar |
                         ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoSavedSettings |
@@ -206,15 +213,15 @@ static void show_characters(Scene &scene)
 
     // Visualize skeleton bones
     ImDrawList *drawList = ImGui::GetWindowDrawList();
-    for (size_t j = 0; j < skeleton.localTransforms.size(); ++j)
+    for (size_t j = 0; j < character.skeleton->num_joints(); ++j)
     {
-      glm::mat4 nodeTransform = character.transform * character.skeleton.modelTransforms[j];
+      glm::mat4 nodeTransform = character.animationContext.getWorldTransforms()[j];
       glm::vec3 nodePosition = nodeTransform[3];
 
-      int32_t parentIndex = character.skeleton.parentIndices[j];
-      if (parentIndex != SkeletonRuntime::NULL_PARENT)
+      int32_t parentIndex = character.skeleton->joint_parents()[j];
+      if (parentIndex != ozz::animation::Skeleton::kNoParent)
       {
-        glm::mat4 parentTransform = character.transform * character.skeleton.modelTransforms[parentIndex];
+        glm::mat4 parentTransform = character.animationContext.getWorldTransforms()[parentIndex];
         glm::vec3 parentPosition = parentTransform[3];
 
         draw_bone(scene.userCamera, parentPosition, nodePosition);

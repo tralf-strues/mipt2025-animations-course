@@ -8,9 +8,8 @@ struct VsOutput
   vec3 BoneColor;
 };
 
-uniform mat4 Transform;
+uniform mat4 SkinningMatricesWS[200];
 uniform mat4 ViewProjection;
-
 
 layout(location = 0) in vec3 Position;
 layout(location = 1) in vec3 Normal;
@@ -32,9 +31,14 @@ vec3 get_random_color(uint x)
 
 void main()
 {
+  mat4 Transform = mat4(0.0f);
+  for (uint i = 0; i < 4; ++i)
+  {
+    Transform += SkinningMatricesWS[BoneIndex[i]] * BoneWeight[i];
+  }
 
   vec3 VertexPosition = (Transform * vec4(Position, 1)).xyz;
-  vsOutput.EyespaceNormal = (Transform * vec4(Normal, 0)).xyz;
+  vsOutput.EyespaceNormal = mat3(Transform) * Normal;
 
   gl_Position = ViewProjection * vec4(VertexPosition, 1);
   vsOutput.WorldPosition = VertexPosition;

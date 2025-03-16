@@ -2,22 +2,16 @@
 #include "render/mesh.h"
 #include <vector>
 
-struct SkeletonAsset
-{
-  static const int32_t NULL_PARENT = -1;
-
-  std::vector<std::string> names;
-  std::vector<glm::mat4> localTransforms;
-  std::vector<int32_t> parentIndices;
-
-  std::vector<int32_t> hierarchyDepths; // only for ui
-};
+#include <ozz/animation/runtime/skeleton.h>
+#include <ozz/animation/runtime/animation.h>
+#include <ozz/base/memory/unique_ptr.h>
 
 struct ModelAsset
 {
   std::string path;
   std::vector<MeshPtr> meshes;
-  SkeletonAsset skeletonAsset;
+  ozz::unique_ptr<ozz::animation::Skeleton> skeleton;
+  std::vector<ozz::unique_ptr<ozz::animation::Animation>> animations;
 };
 
 ModelAsset load_model(const char *path);

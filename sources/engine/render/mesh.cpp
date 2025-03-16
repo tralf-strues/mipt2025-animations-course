@@ -22,7 +22,7 @@ static void init_channel(int channel_index, std::span<const T> channel)
   glBufferData(GL_ARRAY_BUFFER, channel.size() * sizeof(T), channel.data(), GL_STATIC_DRAW);
   glEnableVertexAttribArray(channel_index);
 
-  const int componentCount = T::length();
+  constexpr int componentCount = static_cast<int>(T::length());
   if constexpr (std::is_same<typename T::value_type, float>::value)
     glVertexAttribPointer(channel_index, componentCount, GL_FLOAT, GL_FALSE, 0, 0);
   else
@@ -40,7 +40,7 @@ static MeshPtr create_mesh_impl(const char *name, std::span<const uint32_t> indi
   (init_channel(channelIdx++, channels), ...);
 
   create_indices(indices);
-  return std::make_shared<Mesh>(name, vertexArrayBufferObject, indices.size());
+  return std::make_shared<Mesh>(name, vertexArrayBufferObject, static_cast<int>(indices.size()));
 }
 
 MeshPtr create_mesh(
@@ -50,9 +50,14 @@ MeshPtr create_mesh(
     std::span<const vec3> normals,
     std::span<const vec2> uv,
     std::span<const vec4> weights,
-    std::span<const uvec4> weightsIndex)
+    std::span<const uvec4> weightsIndex,
+    std::vector<mat4> &&inverseBindPose,
+    std::vector<std::string> &&bonesNames)
 {
-  return create_mesh_impl(name, indices, vertices, normals, uv, weights, weightsIndex);
+  auto mesh = create_mesh_impl(name, indices, vertices, normals, uv, weights, weightsIndex);
+  mesh->inverseBindPose = std::move(inverseBindPose);
+  mesh->bonesNames = std::move(bonesNames);
+  return mesh;
 }
 
 MeshPtr create_mesh(

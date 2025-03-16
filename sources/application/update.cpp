@@ -6,4 +6,11 @@ void application_update(Scene &scene)
     scene.userCamera.arcballCamera,
     scene.userCamera.transform,
     engine::get_delta_time());
+
+  for (Character &character : scene.characters)
+  {
+    character.animationContext.advance(
+      character.transform,
+      engine::get_delta_time());
+  }
 }

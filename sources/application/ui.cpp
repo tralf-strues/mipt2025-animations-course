@@ -20,16 +20,16 @@ static void show_info()
   ImGui::End();
 }
 
-static ImVec2 world_to_screen(const UserCamera &camera, glm::vec3 world_position)
+static ImVec2 world_to_screen(const glm::mat4 &projView, glm::vec3 world_position)
 {
-  glm::vec4 clipSpace = camera.projection * inverse(camera.transform) * glm::vec4(world_position, 1.f);
+  glm::vec4 clipSpace = projView * glm::vec4(world_position, 1.f);
   glm::vec3 ndc = glm::vec3(clipSpace) / clipSpace.w;
   glm::vec2 screen = (glm::vec2(ndc) + 1.f) / 2.f;
   ImGuiIO &io = ImGui::GetIO();
   return ImVec2(screen.x * io.DisplaySize.x, io.DisplaySize.y - screen.y * io.DisplaySize.y);
 }
 
-static void draw_bone(const UserCamera &camera, glm::vec3 from, glm::vec3 to)
+static void draw_bone(const glm::mat4 &projView, glm::vec3 from, glm::vec3 to)
 {
   constexpr float X_SPLIT = 0.1f;
   constexpr float Y_SPLIT = 0.2f;
@@ -88,26 +88,24 @@ static void draw_bone(const UserCamera &camera, glm::vec3 from, glm::vec3 to)
 
       position += from;
 
-      triangleScreen[i] = world_to_screen(camera, position);
+      triangleScreen[i] = world_to_screen(projView, position);
     }
 
     drawList->AddTriangle(triangleScreen[0], triangleScreen[1], triangleScreen[2], BONE_COLOR, 2.0f);
   }
 }
 
-static void draw_line(const UserCamera &camera, const glm::mat4 &transform, glm::vec3 to, ImColor color, float thickness)
+static void draw_line(const glm::mat4 &projView, const glm::mat4 &transform, glm::vec3 to, ImColor color, float thickness)
 {
-  auto fromScreen = world_to_screen(camera, transform * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
-  auto toScreen = world_to_screen(camera, transform * glm::vec4(to, 1.0f));
+  auto fromScreen = world_to_screen(projView, transform * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+  auto toScreen = world_to_screen(projView, transform * glm::vec4(to, 1.0f));
 
   ImGui::GetWindowDrawList()->AddLine(fromScreen, toScreen, color, thickness);
 }
 
-static void manipulate_transform(glm::mat4 &transform, const UserCamera &camera)
+static void manipulate_transform(glm::mat4 &transform, const glm::mat4 &cameraView, const glm::mat4 &projection)
 {
   ImGuizmo::BeginFrame();
-  const glm::mat4 &projection = camera.projection;
-  mat4 cameraView = inverse(camera.transform);
   ImGuiIO &io = ImGui::GetIO();
   ImGuizmo::SetRect(0, 0, io.DisplaySize.x, io.DisplaySize.y);
 
@@ -126,8 +124,32 @@ static void show_characters(Scene &scene)
   static uint32_t selectedNode = -1u;
   static std::vector<int> skeletonJointParentsStack;
 
+  glm::mat4 cameraView = scene.activeControllerIdx
+                             ? scene.controllers[scene.activeControllerIdx.value()]->getView()
+                             : glm::inverse(scene.userCamera.transform);
+  glm::mat4 cameraProj = scene.userCamera.projection;
+  glm::mat4 projView = cameraProj * cameraView;
+
   if (ImGui::Begin("Scene"))
   {
+    if (ImGui::CollapsingHeader("Possessable Characters", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+      for (size_t i = 0; i < scene.controllers.size(); i++)
+      {
+        auto &controller = scene.controllers[i];
+        ImGui::PushID(i);
+        if (ImGui::Selectable(controller->getPawn().name.c_str(), scene.activeControllerIdx == i))
+        {
+          scene.activeControllerIdx = i;
+          // SDL_ShowCursor(SDL_DISABLE);
+          SDL_SetRelativeMouseMode(SDL_TRUE);
+        }
+        ImGui::PopID();
+      }
+    }
+
+    ImGui::Separator();
+
     for (size_t i = 0; i < scene.characters.size(); i++)
     {
       Character &character = scene.characters[i];
@@ -182,12 +204,12 @@ static void show_characters(Scene &scene)
       {
         glm::mat4 &worldTransform = character.animationContext.getWorldTransforms()[selectedNode];
         glm::mat4 transform = character.transform * worldTransform;
-        manipulate_transform(transform, scene.userCamera);
+        manipulate_transform(transform, cameraView, cameraProj);
         worldTransform = inverse(character.transform) * transform;
       }
       else
       {
-        manipulate_transform(character.transform, scene.userCamera);
+        manipulate_transform(character.transform, cameraView, cameraProj);
       }
     }
   }
@@ -224,15 +246,15 @@ static void show_characters(Scene &scene)
         glm::mat4 parentTransform = character.animationContext.getWorldTransforms()[parentIndex];
         glm::vec3 parentPosition = parentTransform[3];
 
-        draw_bone(scene.userCamera, parentPosition, nodePosition);
+        draw_bone(projView, parentPosition, nodePosition);
 
         float lineLength = (glm::length(nodePosition - parentPosition) + 0.1f) * 0.1f;
-        draw_line(scene.userCamera, nodeTransform, glm::vec3(lineLength, 0.0f, 0.0f), IM_COL32(255, 0, 0, 255), 1.5f);
-        draw_line(scene.userCamera, nodeTransform, glm::vec3(0.0f, lineLength, 0.0f), IM_COL32(0, 255, 0, 255), 1.5f);
-        draw_line(scene.userCamera, nodeTransform, glm::vec3(0.0f, 0.0f, lineLength), IM_COL32(0, 0, 255, 255), 1.5f);
+        draw_line(projView, nodeTransform, glm::vec3(lineLength, 0.0f, 0.0f), IM_COL32(255, 0, 0, 255), 1.5f);
+        draw_line(projView, nodeTransform, glm::vec3(0.0f, lineLength, 0.0f), IM_COL32(0, 255, 0, 255), 1.5f);
+        draw_line(projView, nodeTransform, glm::vec3(0.0f, 0.0f, lineLength), IM_COL32(0, 0, 255, 255), 1.5f);
       }
 
-      drawList->AddCircleFilled(world_to_screen(scene.userCamera, nodePosition), 4.0f, IM_COL32(255, 215, 0, 215));
+      drawList->AddCircleFilled(world_to_screen(projView, nodePosition), 4.0f, IM_COL32(255, 215, 0, 215));
     }
 
     ImGui::End();
@@ -288,12 +310,27 @@ static void show_models(Scene &scene)
       {
         ImGui::Indent(15.0f);
         ImGui::Text("Path: %s", model.path.c_str());
+
         ImGui::Text("Meshes: %zu", model.meshes.size());
-        for (size_t j = 0; j < model.meshes.size(); j++)
+        if (ImGui::CollapsingHeader("Mesh List", ImGuiTreeNodeFlags_None))
         {
-          const MeshPtr &mesh = model.meshes[j];
-          ImGui::Text("%s", mesh->name.c_str());
+          for (size_t j = 0; j < model.meshes.size(); j++)
+          {
+            const MeshPtr &mesh = model.meshes[j];
+            ImGui::Text("%s", mesh->name.c_str());
+          }
         }
+
+        ImGui::Text("Animations: %zu", model.animations.size());
+        if (ImGui::CollapsingHeader("Animation List", ImGuiTreeNodeFlags_None))
+        {
+          for (size_t j = 0; j < model.animations.size(); j++)
+          {
+            const auto &animation = model.animations[j];
+            ImGui::Text("%s", animation->name());
+          }
+        }
+
         ImGui::Unindent(15.0f);
       }
     }

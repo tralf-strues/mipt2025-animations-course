@@ -31,20 +31,48 @@ void application_init(Scene &scene)
 
   scene.userCamera.transform = calculate_transform(scene.userCamera.arcballCamera);
 
-  engine::onMouseButtonEvent += [&](const SDL_MouseButtonEvent &e) { arccam_mouse_click_handler(e, scene.userCamera.arcballCamera); };
-  engine::onMouseMotionEvent += [&](const SDL_MouseMotionEvent &e) { arccam_mouse_move_handler(e, scene.userCamera.arcballCamera, scene.userCamera.transform); };
-  engine::onMouseWheelEvent += [&](const SDL_MouseWheelEvent &e) { arccam_mouse_wheel_handler(e, scene.userCamera.arcballCamera); };
+  engine::onMouseButtonEvent += [&](const SDL_MouseButtonEvent &e) {
+    if (scene.activeControllerIdx && e.button == SDL_BUTTON_RIGHT && e.state == SDL_RELEASED)
+    {
+      scene.activeControllerIdx.reset();
+      // SDL_ShowCursor(SDL_ENABLE);
+      SDL_SetRelativeMouseMode(SDL_FALSE);
+    }
+    else if (!scene.activeControllerIdx)
+    {
+      arccam_mouse_click_handler(e, scene.userCamera.arcballCamera);
+    }
+  };
 
-  engine::onKeyboardEvent += [](const SDL_KeyboardEvent &e) { if (e.keysym.sym == SDLK_F5 && e.state == SDL_RELEASED) recompile_all_shaders(); };
+  engine::onMouseMotionEvent += [&](const SDL_MouseMotionEvent &e) {
+    if (scene.activeControllerIdx)
+      scene.controllers[scene.activeControllerIdx.value()]->onMouseMotionEvent(e);
+    else
+      arccam_mouse_move_handler(e, scene.userCamera.arcballCamera, scene.userCamera.transform);
+  };
+
+  engine::onMouseWheelEvent += [&](const SDL_MouseWheelEvent &e) {
+    if (!scene.activeControllerIdx)
+      arccam_mouse_wheel_handler(e, scene.userCamera.arcballCamera);
+  };
+
+  engine::onKeyboardEvent += [](const SDL_KeyboardEvent &e) {
+    if (e.keysym.sym == SDLK_F5 && e.state == SDL_RELEASED) recompile_all_shaders();
+  };
 
 
   auto material = make_material("character", "sources/shaders/character_vs.glsl", "sources/shaders/character_ps.glsl");
 
   material->set_property("mainTex", create_texture2d("resources/MotusMan_v55/MCG_diff.jpg"));
 
+  ModelAsset MOB1_Stand_Relaxed_Fgt_v1_IPC = load_model("resources/Animations/IPC/MOB1_Stand_Relaxed_Fgt_v1_IPC.fbx");
   ModelAsset MOB1_Walk_F_Loop_IPC = load_model("resources/Animations/IPC/MOB1_Walk_F_Loop_IPC.fbx");
+  ModelAsset MOB1_Run_F_Loop_IPC = load_model("resources/Animations/IPC/MOB1_Run_F_Loop_IPC.fbx");
+
   ModelAsset motusMan = load_model("resources/MotusMan_v55/MotusMan_v55.fbx");
   ModelAsset ruby = load_model("resources/sketchfab/ruby.fbx");
+
+  scene.characters.reserve(16);
 
   {
     Character character;
@@ -53,9 +81,16 @@ void application_init(Scene &scene)
     character.meshes = motusMan.meshes;
     character.material = std::move(material);
     character.skeleton = motusMan.skeleton.get();
-    character.animationContext = AnimationContext(*MOB1_Walk_F_Loop_IPC.skeleton);
+    character.animationContext = AnimationContext(*motusMan.skeleton);
     character.animationContext.setAnimation(MOB1_Walk_F_Loop_IPC.animations[0].get());
     scene.characters.emplace_back(std::move(character));
+
+    scene.controllers.push_back(std::make_unique<ThirdPersonController>(scene.characters.back(), ThirdPersonController::Info {
+      .speed = 1.0f,
+      .idleAnimation = *MOB1_Stand_Relaxed_Fgt_v1_IPC.animations[0],
+      .walkAnimation = *MOB1_Walk_F_Loop_IPC.animations[0],
+      .runAnimation = *MOB1_Run_F_Loop_IPC.animations[0],
+    }));
   }
 
   auto whiteMaterial = make_material("character", "sources/shaders/character_vs.glsl", "sources/shaders/character_ps.glsl");
@@ -72,9 +107,13 @@ void application_init(Scene &scene)
     AnimationContext(*ruby.skeleton.get())
   });
 
+  scene.characters.back().animationContext.setAnimation(ruby.animations[0].get());
+
   scene.models.push_back(std::move(motusMan));
   scene.models.push_back(std::move(ruby));
+  scene.models.push_back(std::move(MOB1_Stand_Relaxed_Fgt_v1_IPC));
   scene.models.push_back(std::move(MOB1_Walk_F_Loop_IPC));
+  scene.models.push_back(std::move(MOB1_Run_F_Loop_IPC));
 
   std::fflush(stdout);
 }

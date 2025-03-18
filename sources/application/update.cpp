@@ -2,10 +2,17 @@
 
 void application_update(Scene &scene)
 {
-  arcball_camera_update(
-    scene.userCamera.arcballCamera,
-    scene.userCamera.transform,
-    engine::get_delta_time());
+  if (scene.activeControllerIdx)
+  {
+    scene.controllers[scene.activeControllerIdx.value()]->onUpdate(engine::get_delta_time());
+  }
+  else
+  {
+    arcball_camera_update(
+      scene.userCamera.arcballCamera,
+      scene.userCamera.transform,
+      engine::get_delta_time());
+  }
 
   for (Character &character : scene.characters)
   {

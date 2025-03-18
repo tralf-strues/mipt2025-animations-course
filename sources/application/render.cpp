@@ -10,7 +10,6 @@ void render_character(const Character &character, const mat4 &cameraProjView, ve
 
   shader.use();
   material.bind_uniforms_to_shader();
-  shader.set_mat4x4("Transform", character.transform);
   shader.set_mat4x4("ViewProjection", cameraProjView);
   shader.set_vec3("CameraPosition", cameraPosition);
   shader.set_vec3("LightDirection", glm::normalize(light.lightDirection));
@@ -48,11 +47,24 @@ void application_render(Scene &scene)
   glClearColor(grayColor, grayColor, grayColor, 1.f);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-
   const mat4 &projection = scene.userCamera.projection;
-  const glm::mat4 &transform = scene.userCamera.transform;
-  mat4 projView = projection * inverse(transform);
+  mat4 projView;
+  glm::vec3 cameraPosition;
+
+  if (!scene.activeControllerIdx)
+  {
+    const glm::mat4 &transform = scene.userCamera.transform;
+    cameraPosition = glm::vec3(transform[3]);
+    projView = projection * inverse(transform);
+  }
+  else
+  {
+    const auto &controller = scene.controllers[scene.activeControllerIdx.value()];
+    cameraPosition = controller->getCameraPosition();
+    projView = projection * controller->getView();
+  }
+
 
   for (const Character &character : scene.characters)
-    render_character(character, projView, glm::vec3(transform[3]), scene.light);
+    render_character(character, projView, cameraPosition, scene.light);
 }

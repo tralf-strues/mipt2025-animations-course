@@ -115,5 +115,14 @@ void application_init(Scene &scene)
   scene.models.push_back(std::move(MOB1_Walk_F_Loop_IPC));
   scene.models.push_back(std::move(MOB1_Run_F_Loop_IPC));
 
+  auto staticObjectMaterial = make_material("static_object", "sources/shaders/static_object_vs.glsl", "sources/shaders/static_object_ps.glsl");
+
+  scene.staticObjects.push_back(StaticObject{
+    "Plane",
+    glm::scale(glm::identity<glm::mat4>(), glm::vec3(10.f, 1.f, 10.f)),
+    {make_plane_mesh()},
+    staticObjectMaterial
+  });
+
   std::fflush(stdout);
 }

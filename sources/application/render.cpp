@@ -39,6 +39,26 @@ void render_character(const Character &character, const mat4 &cameraProjView, ve
   }
 }
 
+void render_static_object(const StaticObject &object, const mat4 &cameraProjView, vec3 cameraPosition, const DirectionLight &light)
+{
+  const Material &material = *object.material;
+  const Shader &shader = material.get_shader();
+
+  shader.use();
+  material.bind_uniforms_to_shader();
+  shader.set_mat4x4("Transform", object.transform);
+  shader.set_mat4x4("ViewProjection", cameraProjView);
+  shader.set_vec3("CameraPosition", cameraPosition);
+  shader.set_vec3("LightDirection", glm::normalize(light.lightDirection));
+  shader.set_vec3("AmbientLight", light.ambient);
+  shader.set_vec3("SunLight", light.lightColor);
+
+  for (const MeshPtr &mesh : object.meshes)
+  {
+    render(mesh);
+  }
+}
+
 void application_render(Scene &scene)
 {
   glEnable(GL_DEPTH_TEST);
@@ -64,7 +84,9 @@ void application_render(Scene &scene)
     projView = projection * controller->getView();
   }
 
-
   for (const Character &character : scene.characters)
     render_character(character, projView, cameraPosition, scene.light);
+
+  for (const StaticObject &object : scene.staticObjects)
+    render_static_object(object, projView, cameraPosition, scene.light);
 }
